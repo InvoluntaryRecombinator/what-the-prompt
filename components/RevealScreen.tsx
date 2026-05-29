@@ -7,6 +7,7 @@ import type {
   GuessRecord,
   PlayerRecord,
 } from "@/services/gameService";
+import { scoreGuess } from "@/utils/scoringLogic";
 import type { WordMatch } from "@/utils/wordUtils";
 
 type RevealScreenProps = {
@@ -58,6 +59,7 @@ export default function RevealScreen({
             const player = players.find(
               (candidate) => candidate.player_id === guess.player_id,
             );
+            const scoredGuess = scoreGuess(game.prompt_text ?? "", guess.raw_guess);
 
             return (
               <article
@@ -72,7 +74,26 @@ export default function RevealScreen({
                     {guess.score} points
                   </span>
                 </div>
-                <WordList words={guess.matched_words_json} fallback={guess.raw_guess} />
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-zinc-400">
+                    Prompt Matches
+                  </h4>
+                  <WordList
+                    fallback={game.prompt_text ?? ""}
+                    words={scoredGuess.promptWords}
+                  />
+                </div>
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-zinc-400">Guess</h4>
+                  <WordList
+                    fallback={guess.raw_guess}
+                    words={
+                      scoredGuess.guessWords.length > 0
+                        ? scoredGuess.guessWords
+                        : guess.matched_words_json
+                    }
+                  />
+                </div>
               </article>
             );
           })}

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { FormEvent, useState } from "react";
 
 import type { GameRecord, GuessRecord } from "@/services/gameService";
+import { countWords } from "@/utils/wordUtils";
 
 type GuessingScreenProps = {
   game: GameRecord;
@@ -29,6 +30,8 @@ export default function GuessingScreen({
   onReveal,
 }: GuessingScreenProps) {
   const [rawGuess, setRawGuess] = useState("");
+  const guessWordCount = countWords(rawGuess);
+  const targetWordCount = game.prompt_word_count ?? 0;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,12 +74,19 @@ export default function GuessingScreen({
               <span className="text-sm font-medium text-zinc-300">Guess</span>
               <textarea
                 className="min-h-28 rounded border border-zinc-700 bg-zinc-950 p-3 text-zinc-100 outline-none focus:border-cyan-400"
+                maxLength={400}
                 onChange={(event) => setRawGuess(event.target.value)}
                 placeholder="type the prompt you think made this image"
                 required
                 value={rawGuess}
               />
             </label>
+            <div className="flex flex-col gap-1 rounded border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>Characters: {rawGuess.length} / 400</span>
+              <span>
+                Words: {guessWordCount} / {targetWordCount}
+              </span>
+            </div>
             <button
               className="rounded bg-cyan-400 px-4 py-2 font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
               disabled={isBusy || !rawGuess.trim()}

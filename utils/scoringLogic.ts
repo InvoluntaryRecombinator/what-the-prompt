@@ -2,6 +2,7 @@ import { normalizeText, splitWords, type WordMatch } from "@/utils/wordUtils";
 
 export type ScoreResult = {
   score: number;
+  guessWords: WordMatch[];
   matchedWords: WordMatch[];
   promptWords: WordMatch[];
 };
@@ -12,7 +13,7 @@ export function scoreGuess(promptText: string, rawGuess: string): ScoreResult {
   const unmatchedPromptWords = splitWords(normalizedPromptText);
   const guessWords = splitWords(normalizedRawGuess);
 
-  const matchedWords = guessWords.map((word) => {
+  const mappedGuessWords = guessWords.map((word) => {
     const promptIndex = unmatchedPromptWords.indexOf(word);
 
     if (promptIndex === -1) {
@@ -24,8 +25,9 @@ export function scoreGuess(promptText: string, rawGuess: string): ScoreResult {
   });
 
   return {
-    score: matchedWords.filter((word) => word.matched).length,
-    matchedWords,
+    score: mappedGuessWords.filter((word) => word.matched).length,
+    guessWords: mappedGuessWords,
+    matchedWords: mappedGuessWords,
     promptWords: buildPromptMatches(normalizedPromptText, normalizedRawGuess),
   };
 }

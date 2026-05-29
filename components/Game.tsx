@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import GeneratingScreen from "@/components/GeneratingScreen";
 import GuessingScreen from "@/components/GuessingScreen";
+import IntermissionScreen from "@/components/IntermissionScreen";
 import Lobby from "@/components/Lobby";
 import PlayerHUD from "@/components/PlayerHUD";
 import PromptingScreen from "@/components/PromptingScreen";
@@ -12,9 +13,11 @@ import {
   advancePhase,
   createGame,
   joinGame,
+  playCard,
   pollGameState,
   submitGuess,
   submitPrompt,
+  toggleCardReady,
   toggleReady,
   type GameState,
 } from "@/services/gameService";
@@ -118,6 +121,9 @@ export default function Game() {
     gameState?.players.filter(
       (player) => player.player_id !== gameState.game.current_prompter_id,
     ).length ?? 0;
+  const nextPrompterName = gameState
+    ? getPrompterNameForRound(gameState, gameState.game.current_round + 1)
+    : "";
 
   async function handleCreateGame(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -201,6 +207,42 @@ export default function Game() {
     await runAction(async () => {
       setGameState(
         await toggleReady({
+          gameId: gameState.game.id,
+          playerId: localPlayerId,
+        }),
+      );
+    });
+  }
+
+  async function handleToggleCardReady() {
+    if (!gameState) {
+      return;
+    }
+
+    await runAction(async () => {
+      setGameState(
+        await toggleCardReady({
+          gameId: gameState.game.id,
+          playerId: localPlayerId,
+        }),
+      );
+    });
+  }
+
+  async function handlePlayCard(cardId: string, targetPlayerId: string) {
+    if (!gameState) {
+      return;
+    }
+
+    await runAction(async () => {
+      await playCard({
+        gameId: gameState.game.id,
+        playerId: localPlayerId,
+        cardId,
+        targetPlayerId,
+      });
+      setGameState(
+        await toggleCardReady({
           gameId: gameState.game.id,
           playerId: localPlayerId,
         }),
@@ -346,6 +388,7 @@ export default function Game() {
           hasSubmittedGuess={hasSubmittedGuess}
           isBusy={isBusy}
           isPrompter={Boolean(isPrompter)}
+          localPlayerId={localPlayerId}
           onSubmitGuess={handleSubmitGuess}
         />
       );
@@ -359,6 +402,20 @@ export default function Game() {
           isBusy={isBusy}
           localPlayerId={localPlayerId}
           onReady={handleToggleReady}
+          players={gameState.players}
+        />
+      );
+    }
+
+    if (gameState.game.status === "intermission") {
+      return (
+        <IntermissionScreen
+          game={gameState.game}
+          isBusy={isBusy}
+          localPlayerId={localPlayerId}
+          nextPrompterName={nextPrompterName}
+          onPlayCard={handlePlayCard}
+          onReady={handleToggleCardReady}
           players={gameState.players}
         />
       );
@@ -403,7 +460,9 @@ export default function Game() {
           </div>
         ) : null}
 
-        {gameState && gameState.game.status !== "lobby" ? (
+        {gameState &&
+        gameState.game.status !== "lobby" &&
+        gameState.game.status !== "intermission" ? (
           <PlayerHUD
             localPlayerId={localPlayerId}
             players={gameState.players}
@@ -435,6 +494,26 @@ function randomDisplayName() {
   const suffix = Math.floor(100 + Math.random() * 900);
 
   return `${adjective} ${noun} ${suffix}`;
+}
+
+function getPrompterNameForRound(state: GameState, roundNumber: number): string {
+  const turnOrder = state.game.turn_order.filter((playerId) =>
+    state.players.some((player) => player.player_id === playerId),
+  );
+  const fallbackTurnOrder = state.players.map((player) => player.player_id);
+  const usableTurnOrder = turnOrder.length > 0 ? turnOrder : fallbackTurnOrder;
+
+  if (usableTurnOrder.length === 0) {
+    return "";
+  }
+
+  const nextPrompterId =
+    usableTurnOrder[roundNumber % usableTurnOrder.length] ?? "";
+
+  return (
+    state.players.find((player) => player.player_id === nextPrompterId)
+      ?.display_name ?? ""
+  );
 }
 
 function getErrorMessage(error: unknown) {

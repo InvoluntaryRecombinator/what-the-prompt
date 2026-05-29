@@ -12,6 +12,7 @@ type GuessingScreenProps = {
   isPrompter: boolean;
   hasSubmittedGuess: boolean;
   guesserCount: number;
+  localPlayerId: string;
   isBusy: boolean;
   onSubmitGuess: (rawGuess: string) => void | Promise<void>;
 };
@@ -22,6 +23,7 @@ export default function GuessingScreen({
   isPrompter,
   hasSubmittedGuess,
   guesserCount,
+  localPlayerId,
   isBusy,
   onSubmitGuess,
 }: GuessingScreenProps) {
@@ -32,6 +34,9 @@ export default function GuessingScreen({
   const submittedRef = useRef(false);
   const guessWordCount = countWords(rawGuess);
   const targetWordCount = game.prompt_word_count ?? 0;
+  const isDdosTarget = game.active_modifiers.some(
+    (modifier) => modifier.type === "ddos" && modifier.target === localPlayerId,
+  );
 
   useEffect(() => {
     function tick() {
@@ -70,7 +75,7 @@ export default function GuessingScreen({
         <div className="overflow-hidden rounded border border-zinc-800 bg-zinc-900">
           <Image
             alt="Generated prompt result"
-            className="h-auto w-full"
+            className={`h-auto w-full ${isDdosTarget ? "blur-lg" : ""}`}
             height={1024}
             priority
             src={game.image_url}

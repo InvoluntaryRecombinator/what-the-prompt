@@ -1,20 +1,17 @@
-# What The Prompt - MVP Blueprint
+# What The Prompt - Architecture Blueprint
 
 ## 1. Core Game Flow
-1. Host creates a lobby (selects max players and guessing timer: 30, 45, 60, or 90s).
-2. Players join. Each gets a random display name and a stable `playerId` stored in localStorage.
-3. Lobby fills -> Game starts. 
-4. Prompter Selection: We use the `turn_order` array to rotate prompters. The current prompter is selected based on the `current_round` index. (Players do not volunteer).
-5. Prompter writes an image prompt (maxLength=400).
-6. The frontend securely calls the backend `/api/generate`.
-7. The resulting image URL is saved to the Supabase game state.
-8. Guessers see the image and the original prompt's word count. 
-9. Timer ends -> auto-submit guesses. 
-10. Host client calculates points via exact string matching (indexOf + splice) and updates phase to `reveal`.
-11. Reveal screen shows original prompt, guesses, highlighted matched words, and points.
-12. Players click "Ready". When all are ready, `current_round` increments, and the next player in `turn_order` becomes prompter.
+1. Host creates lobby (selects max players, guessing timer).
+2. Players join. Each gets a random display name and stable `playerId`.
+3. Lobby fills -> Game starts. (Host privileges cease to exist here. All UI is universal).
+4. Prompting Phase: The `turn_order` array rotates prompters based on `current_round`. 
+5. Prompter writes image prompt. Frontend securely calls backend `/api/generate`.
+6. Guessing Phase: Guessers see image. Ticking clock auto-submits guesses at 00:00.
+7. Reveal Phase: Shows original prompt, guesses, highlighted matched words, and updates scores universally.
+8. Intermission Phase: Players click "Ready" on Reveal and move here. Bottom 50% of players receive 1 Attack Card. Players can target others or skip.
+9. Round Cycles: When all players ready up in Intermission, `current_round` increments, prompter cycles, and active modifiers are cleared.
 
 ## 2. Database Schema (Supabase)
-* **games:** id (uuid), created_at, status (text: lobby | prompting | generating | guessing | reveal | game_over), host_player_id (text), max_players (int), guessing_time_limit (int), current_prompter_id (text), current_round (int), phase_end_time (timestamp), prompt_text (text), prompt_word_count (int), image_url (text), ready_player_ids (jsonb array), turn_order (jsonb array of playerIds).
-* **players:** id (uuid), created_at, game_id (uuid), player_id (text), display_name (text), score (int), is_host (boolean), joined_at (timestamp).
-* **guesses:** id (uuid), created_at, game_id (uuid), round_number (int), player_id (text), raw_guess (text), score (int), matched_words_json (jsonb).
+* **games:** id, created_at, status (lobby | prompting | generating | guessing | reveal | intermission | game_over), max_players, guessing_time_limit, current_prompter_id, current_round, phase_end_time, prompt_text, prompt_word_count, image_url, ready_player_ids, turn_order, active_modifiers (jsonb), card_phase_done_player_ids (jsonb).
+* **players:** id, created_at, game_id, player_id, display_name, score, joined_at, inventory_cards (jsonb).
+* **guesses:** id, created_at, game_id, round_number, player_id, raw_guess, score, matched_words_json (jsonb).

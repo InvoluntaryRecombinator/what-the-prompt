@@ -107,7 +107,6 @@ export default function Game() {
     };
   }, [displayName, gameId, localPlayerId]);
 
-  const isHost = gameState?.game.host_player_id === localPlayerId;
   const isPrompter = gameState?.game.current_prompter_id === localPlayerId;
   const currentPrompterName =
     gameState?.players.find(
@@ -314,7 +313,7 @@ export default function Game() {
         <Lobby
           game={gameState.game}
           isBusy={isBusy}
-          isHost={Boolean(isHost)}
+          isHost={gameState.game.host_player_id === localPlayerId}
           localPlayerId={localPlayerId}
           onStartGame={handleAdvancePhase}
           players={gameState.players}
@@ -404,7 +403,7 @@ export default function Game() {
           </div>
         ) : null}
 
-        {gameState ? (
+        {gameState && gameState.game.status !== "lobby" ? (
           <PlayerHUD
             localPlayerId={localPlayerId}
             players={gameState.players}

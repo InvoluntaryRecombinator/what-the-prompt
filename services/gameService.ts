@@ -16,8 +16,8 @@ export type GameStatus =
 
 export type ActiveModifier = {
   type: string;
-  source: string;
   target: string;
+  sourcePlayerId: string;
 };
 
 export type GameRecord = {
@@ -495,7 +495,7 @@ export async function playCard({
 
   const nextModifiers = [
     ...state.game.active_modifiers,
-    { type: cardId, source: playerId, target: targetPlayerId },
+    { type: cardId, target: targetPlayerId, sourcePlayerId: playerId },
   ];
   const { error: gameError } = await supabase
     .from("games")
@@ -813,17 +813,23 @@ function asActiveModifiers(value: unknown): ActiveModifier[] {
 
   return value
     .filter(
-      (item): item is ActiveModifier =>
+      (
+        item,
+      ): item is {
+        type: unknown;
+        target: unknown;
+        source?: unknown;
+        sourcePlayerId?: unknown;
+      } =>
         typeof item === "object" &&
         item !== null &&
         "type" in item &&
-        "source" in item &&
         "target" in item,
     )
     .map((item) => ({
       type: String(item.type),
-      source: String(item.source),
       target: String(item.target),
+      sourcePlayerId: String(item.sourcePlayerId ?? item.source ?? ""),
     }));
 }
 

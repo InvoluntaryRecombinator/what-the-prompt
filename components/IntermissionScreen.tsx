@@ -65,9 +65,7 @@ export default function IntermissionScreen({
       <div className="rounded border border-zinc-800 bg-zinc-900 p-4">
         <h3 className="text-xl font-semibold">Your Cards</h3>
 
-        {inventoryCards.length === 0 ? (
-          <p className="mt-3 text-zinc-400">No cards in inventory.</p>
-        ) : (
+        {inventoryCards.length > 0 ? (
           <div className="mt-4 grid gap-3">
             {inventoryCards.map((cardId, index) => {
               const card = cardDefinitions[cardId];
@@ -96,7 +94,7 @@ export default function IntermissionScreen({
               );
             })}
           </div>
-        )}
+        ) : null}
 
         <button
           className="mt-5 rounded border border-zinc-700 px-4 py-2 font-semibold text-zinc-100 hover:border-cyan-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-zinc-500"

@@ -44,7 +44,7 @@ export default function FeatureCard({
         >
           {targets.map((target) => (
             <option key={target.id} value={target.player_id}>
-              {target.display_name}
+              {target.display_name} - {target.score}
             </option>
           ))}
         </select>

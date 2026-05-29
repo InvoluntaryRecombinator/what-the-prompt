@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import GeneratingScreen from "@/components/GeneratingScreen";
 import GuessingScreen from "@/components/GuessingScreen";
 import Lobby from "@/components/Lobby";
+import PlayerHUD from "@/components/PlayerHUD";
 import PromptingScreen from "@/components/PromptingScreen";
 import RevealScreen from "@/components/RevealScreen";
 import {
@@ -14,6 +15,7 @@ import {
   pollGameState,
   submitGuess,
   submitPrompt,
+  toggleReady,
   type GameState,
 } from "@/services/gameService";
 
@@ -105,12 +107,6 @@ export default function Game() {
     };
   }, [displayName, gameId, localPlayerId]);
 
-  const localPlayer = useMemo(
-    () =>
-      gameState?.players.find((player) => player.player_id === localPlayerId) ??
-      null,
-    [gameState, localPlayerId],
-  );
   const isHost = gameState?.game.host_player_id === localPlayerId;
   const isPrompter = gameState?.game.current_prompter_id === localPlayerId;
   const currentPrompterName =
@@ -193,6 +189,21 @@ export default function Game() {
           gameId: gameState.game.id,
           playerId: localPlayerId,
           rawGuess,
+        }),
+      );
+    });
+  }
+
+  async function handleToggleReady() {
+    if (!gameState) {
+      return;
+    }
+
+    await runAction(async () => {
+      setGameState(
+        await toggleReady({
+          gameId: gameState.game.id,
+          playerId: localPlayerId,
         }),
       );
     });
@@ -335,9 +346,7 @@ export default function Game() {
           guesserCount={guesserCount}
           hasSubmittedGuess={hasSubmittedGuess}
           isBusy={isBusy}
-          isHost={Boolean(isHost)}
           isPrompter={Boolean(isPrompter)}
-          onReveal={handleAdvancePhase}
           onSubmitGuess={handleSubmitGuess}
         />
       );
@@ -349,8 +358,8 @@ export default function Game() {
           game={gameState.game}
           guesses={gameState.guesses}
           isBusy={isBusy}
-          isHost={Boolean(isHost)}
-          onNextRound={handleAdvancePhase}
+          localPlayerId={localPlayerId}
+          onReady={handleToggleReady}
           players={gameState.players}
         />
       );
@@ -395,29 +404,14 @@ export default function Game() {
           </div>
         ) : null}
 
-        {renderGameContent()}
-
         {gameState ? (
-          <section className="rounded border border-zinc-800 bg-zinc-900 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-              Scores
-            </h2>
-            <ul className="mt-3 flex flex-col gap-2">
-              {gameState.players.map((player) => (
-                <li
-                  className="flex items-center justify-between rounded bg-zinc-950 px-3 py-2"
-                  key={player.id}
-                >
-                  <span>
-                    {player.display_name}
-                    {player.id === localPlayer?.id ? " (you)" : ""}
-                  </span>
-                  <span>{player.score}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <PlayerHUD
+            localPlayerId={localPlayerId}
+            players={gameState.players}
+          />
         ) : null}
+
+        {renderGameContent()}
       </div>
     </main>
   );

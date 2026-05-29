@@ -14,19 +14,24 @@ type RevealScreenProps = {
   game: GameRecord;
   guesses: GuessRecord[];
   players: PlayerRecord[];
-  isHost: boolean;
   isBusy: boolean;
-  onNextRound: () => void;
+  localPlayerId: string;
+  onReady: () => void;
 };
 
 export default function RevealScreen({
   game,
   guesses,
   players,
-  isHost,
   isBusy,
-  onNextRound,
+  localPlayerId,
+  onReady,
 }: RevealScreenProps) {
+  const readyCount = game.ready_player_ids.filter((playerId) =>
+    players.some((player) => player.player_id === playerId),
+  ).length;
+  const isLocalReady = game.ready_player_ids.includes(localPlayerId);
+
   return (
     <section className="flex flex-col gap-4">
       {game.image_url ? (
@@ -99,20 +104,19 @@ export default function RevealScreen({
           })}
         </div>
 
-        {isHost ? (
+        <div className="mt-5 flex flex-col gap-3 rounded border border-zinc-800 bg-zinc-950 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-zinc-400">
+            {readyCount}/{players.length} Players Ready
+          </p>
           <button
-            className="mt-5 rounded border border-zinc-700 px-4 py-2 font-semibold text-zinc-100 hover:border-cyan-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-zinc-500"
-            disabled={isBusy}
-            onClick={onNextRound}
+            className="rounded bg-cyan-400 px-4 py-2 font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            disabled={isBusy || isLocalReady}
+            onClick={onReady}
             type="button"
           >
-            Next Round
+            {isLocalReady ? "Ready" : "Ready for Next Round"}
           </button>
-        ) : (
-          <p className="mt-5 text-sm text-zinc-400">
-            Waiting for the host to start the next round.
-          </p>
-        )}
+        </div>
       </div>
     </section>
   );

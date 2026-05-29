@@ -183,11 +183,17 @@ export async function pollGameState(gameId: string): Promise<GameState> {
 
   throwIfError(guessError);
 
-  return {
+  const state = {
     game,
     players: (playerData ?? []) as PlayerRecord[],
     guesses: (guessData ?? []).map((guess) => normalizeGuess(guess as GuessRow)),
   };
+
+  if (shouldAutoReveal(state)) {
+    return revealRound(state);
+  }
+
+  return state;
 }
 
 export async function submitPrompt({
@@ -250,9 +256,10 @@ export async function submitPrompt({
       throw new Error(data.detail || data.error || "Image generation failed.");
     }
 
-    const phaseEndTime = new Date(
-      Date.now() + state.game.guessing_time_limit * 1000,
-    ).toISOString();
+    const phaseEndTime = getPhaseEndTimeFromResponse(
+      response,
+      state.game.guessing_time_limit,
+    );
     const { error: guessingError } = await supabase
       .from("games")
       .update({
@@ -286,16 +293,16 @@ export async function submitGuess({
   const state = await pollGameState(gameId);
   const guess = rawGuess.trim();
 
+  if (state.game.status === "reveal") {
+    return state;
+  }
+
   if (state.game.status !== "guessing") {
     throw new Error("This game is not accepting guesses right now.");
   }
 
   if (state.game.current_prompter_id === playerId) {
     throw new Error("The prompter cannot submit a guess.");
-  }
-
-  if (!guess) {
-    throw new Error("Guess is required.");
   }
 
   const { error: deleteError } = await supabase
@@ -317,6 +324,56 @@ export async function submitGuess({
     score: 0,
     matched_words_json: [],
   });
+
+  throwIfError(error);
+
+  const nextState = await pollGameState(state.game.id);
+
+  if (allGuessersSubmitted(nextState)) {
+    return revealRound(nextState);
+  }
+
+  return nextState;
+}
+
+export async function toggleReady({
+  gameId,
+  playerId,
+}: {
+  gameId: string;
+  playerId: string;
+}): Promise<GameState> {
+  const state = await pollGameState(gameId);
+
+  if (state.game.status !== "reveal") {
+    return state;
+  }
+
+  const readyPlayerIds = state.game.ready_player_ids.includes(playerId)
+    ? state.game.ready_player_ids
+    : [...state.game.ready_player_ids, playerId];
+  const playerIds = state.players.map((player) => player.player_id);
+  const readyCount = readyPlayerIds.filter((readyPlayerId) =>
+    playerIds.includes(readyPlayerId),
+  ).length;
+
+  if (readyCount >= state.players.length && state.players.length > 0) {
+    return startPromptingRound(
+      {
+        ...state,
+        game: {
+          ...state.game,
+          ready_player_ids: readyPlayerIds,
+        },
+      },
+      state.game.current_round + 1,
+    );
+  }
+
+  const { error } = await supabase
+    .from("games")
+    .update({ ready_player_ids: readyPlayerIds })
+    .eq("id", state.game.id);
 
   throwIfError(error);
 
@@ -356,6 +413,27 @@ async function revealRound(state: GameState): Promise<GameState> {
     throw new Error("Cannot score without a prompt.");
   }
 
+  if (state.game.status !== "guessing") {
+    return state;
+  }
+
+  const { data: claimedGame, error: claimError } = await supabase
+    .from("games")
+    .update({
+      status: "reveal",
+      phase_end_time: null,
+    })
+    .eq("id", state.game.id)
+    .eq("status", "guessing")
+    .select("*")
+    .maybeSingle();
+
+  throwIfError(claimError);
+
+  if (!claimedGame) {
+    return pollGameState(state.game.id);
+  }
+
   await Promise.all(
     state.guesses.map(async (guess) => {
       const scoredGuess = scoreGuess(state.game.prompt_text ?? "", guess.raw_guess);
@@ -367,7 +445,7 @@ async function revealRound(state: GameState): Promise<GameState> {
         .from("guesses")
         .update({
           score: scoredGuess.score,
-          matched_words_json: scoredGuess.matchedWords,
+          matched_words_json: scoredGuess.guessWords,
         })
         .eq("id", guess.id);
 
@@ -385,16 +463,6 @@ async function revealRound(state: GameState): Promise<GameState> {
       throwIfError(playerError);
     }),
   );
-
-  const { error: gameError } = await supabase
-    .from("games")
-    .update({
-      status: "reveal",
-      phase_end_time: null,
-    })
-    .eq("id", state.game.id);
-
-  throwIfError(gameError);
 
   return pollGameState(state.game.id);
 }
@@ -442,6 +510,47 @@ function getTurnOrder(state: GameState): string[] {
   }
 
   return fallbackTurnOrder;
+}
+
+function getPhaseEndTimeFromResponse(
+  response: Response,
+  guessingTimeLimit: number,
+): string {
+  const serverDate = response.headers.get("date");
+  const serverNow = serverDate ? Date.parse(serverDate) : Number.NaN;
+  const startTime = Number.isNaN(serverNow) ? Date.now() : serverNow;
+
+  return new Date(startTime + guessingTimeLimit * 1000).toISOString();
+}
+
+function shouldAutoReveal(state: GameState): boolean {
+  if (state.game.status !== "guessing") {
+    return false;
+  }
+
+  return isPhaseExpired(state.game) || allGuessersSubmitted(state);
+}
+
+function isPhaseExpired(game: GameRecord): boolean {
+  if (!game.phase_end_time) {
+    return false;
+  }
+
+  return Date.now() >= new Date(game.phase_end_time).getTime() + 1500;
+}
+
+function allGuessersSubmitted(state: GameState): boolean {
+  const guesserIds = state.players
+    .map((player) => player.player_id)
+    .filter((playerId) => playerId !== state.game.current_prompter_id);
+
+  if (guesserIds.length === 0) {
+    return false;
+  }
+
+  return guesserIds.every((playerId) =>
+    state.guesses.some((guess) => guess.player_id === playerId),
+  );
 }
 
 function normalizeGame(game: GameRow): GameRecord {

@@ -27,10 +27,11 @@ export default function RevealScreen({
   localPlayerId,
   onReady,
 }: RevealScreenProps) {
-  const readyCount = game.ready_player_ids.filter((playerId) =>
-    players.some((player) => player.player_id === playerId),
-  ).length;
-  const isLocalReady = game.ready_player_ids.includes(localPlayerId);
+  const localPlayer = players.find(
+    (player) => player.player_id === localPlayerId,
+  );
+  const readyCount = players.filter((player) => player.is_ready).length;
+  const isLocalReady = Boolean(localPlayer?.is_ready);
 
   return (
     <section className="flex flex-col gap-4">

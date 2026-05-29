@@ -33,10 +33,8 @@ export type GameRecord = {
   prompt_text: string | null;
   prompt_word_count: number | null;
   image_url: string | null;
-  ready_player_ids: string[];
   turn_order: string[];
   active_modifiers: ActiveModifier[];
-  card_phase_done_player_ids: string[];
 };
 
 export type PlayerRecord = {
@@ -49,6 +47,8 @@ export type PlayerRecord = {
   is_host: boolean;
   joined_at: string;
   inventory_cards: string[];
+  is_ready: boolean;
+  is_card_phase_done: boolean;
 };
 
 export type GuessRecord = {
@@ -68,22 +68,19 @@ export type GameState = {
   guesses: GuessRecord[];
 };
 
-type GameRow = Omit<
-  GameRecord,
-  | "ready_player_ids"
-  | "turn_order"
-  | "active_modifiers"
-  | "card_phase_done_player_ids"
-> & {
-  ready_player_ids: unknown;
+type GameRow = Omit<GameRecord, "turn_order" | "active_modifiers"> & {
   turn_order: unknown;
   active_modifiers?: unknown;
-  card_phase_done_player_ids?: unknown;
 };
 
-type PlayerRow = Omit<PlayerRecord, "inventory_cards" | "is_host"> & {
+type PlayerRow = Omit<
+  PlayerRecord,
+  "inventory_cards" | "is_host" | "is_ready" | "is_card_phase_done"
+> & {
   inventory_cards?: unknown;
   is_host?: unknown;
+  is_ready?: unknown;
+  is_card_phase_done?: unknown;
 };
 
 type GuessRow = Omit<GuessRecord, "matched_words_json"> & {
@@ -109,10 +106,8 @@ export async function createGame({
       max_players: maxPlayers,
       guessing_time_limit: guessingTimeLimit,
       current_round: 0,
-      ready_player_ids: [],
       turn_order: [hostPlayerId],
       active_modifiers: [],
-      card_phase_done_player_ids: [],
     })
     .select("*")
     .single();
@@ -126,6 +121,8 @@ export async function createGame({
     score: 0,
     is_host: true,
     inventory_cards: [],
+    is_ready: false,
+    is_card_phase_done: false,
   });
 
   throwIfError(playerError);
@@ -163,6 +160,8 @@ export async function joinGame({
     score: 0,
     is_host: false,
     inventory_cards: [],
+    is_ready: false,
+    is_card_phase_done: false,
   });
 
   throwIfError(playerError);
@@ -261,8 +260,6 @@ export async function submitPrompt({
       prompt_text: prompt,
       prompt_word_count: countWords(prompt),
       image_url: null,
-      ready_player_ids: [],
-      card_phase_done_player_ids: [],
       phase_end_time: null,
     })
     .eq("id", state.game.id)
@@ -386,34 +383,21 @@ export async function toggleReady({
     return state;
   }
 
-  const readyPlayerIds = state.game.ready_player_ids.includes(playerId)
-    ? state.game.ready_player_ids
-    : [...state.game.ready_player_ids, playerId];
-  const playerIds = state.players.map((player) => player.player_id);
-  const readyCount = readyPlayerIds.filter((readyPlayerId) =>
-    playerIds.includes(readyPlayerId),
-  ).length;
-
-  if (readyCount >= state.players.length && state.players.length > 0) {
-    return enterIntermission({
-      ...state,
-      game: {
-        ...state.game,
-        ready_player_ids: readyPlayerIds,
-      },
-    });
-  }
-
   const { error } = await supabase
-    .from("games")
-    .update({ ready_player_ids: readyPlayerIds })
-    .eq("id", state.game.id)
-    .eq("status", "reveal")
-    .eq("current_round", state.game.current_round);
+    .from("players")
+    .update({ is_ready: true })
+    .eq("game_id", state.game.id)
+    .eq("player_id", playerId);
 
   throwIfError(error);
 
-  return pollGameState(state.game.id);
+  const nextState = await pollGameState(state.game.id);
+
+  if (nextState.game.status === "reveal" && allPlayersReady(nextState)) {
+    return enterIntermission(nextState);
+  }
+
+  return nextState;
 }
 
 export async function toggleCardReady({
@@ -429,37 +413,24 @@ export async function toggleCardReady({
     return state;
   }
 
-  const donePlayerIds = state.game.card_phase_done_player_ids.includes(playerId)
-    ? state.game.card_phase_done_player_ids
-    : [...state.game.card_phase_done_player_ids, playerId];
-  const playerIds = state.players.map((player) => player.player_id);
-  const doneCount = donePlayerIds.filter((donePlayerId) =>
-    playerIds.includes(donePlayerId),
-  ).length;
-
-  if (doneCount >= state.players.length && state.players.length > 0) {
-    return startPromptingRound(
-      {
-        ...state,
-        game: {
-          ...state.game,
-          card_phase_done_player_ids: donePlayerIds,
-        },
-      },
-      state.game.current_round + 1,
-    );
-  }
-
   const { error } = await supabase
-    .from("games")
-    .update({ card_phase_done_player_ids: donePlayerIds })
-    .eq("id", state.game.id)
-    .eq("status", "intermission")
-    .eq("current_round", state.game.current_round);
+    .from("players")
+    .update({ is_card_phase_done: true })
+    .eq("game_id", state.game.id)
+    .eq("player_id", playerId);
 
   throwIfError(error);
 
-  return pollGameState(state.game.id);
+  const nextState = await pollGameState(state.game.id);
+
+  if (
+    nextState.game.status === "intermission" &&
+    allPlayersCardPhaseDone(nextState)
+  ) {
+    return startPromptingRound(nextState, nextState.game.current_round + 1);
+  }
+
+  return nextState;
 }
 
 export async function playCard({
@@ -577,8 +548,6 @@ async function enterIntermission(state: GameState): Promise<GameState> {
     .from("games")
     .update({
       status: "intermission",
-      ready_player_ids: [],
-      card_phase_done_player_ids: [],
       phase_end_time: null,
     })
     .eq("id", state.game.id)
@@ -592,6 +561,8 @@ async function enterIntermission(state: GameState): Promise<GameState> {
   if (!claimedGame) {
     return pollGameState(state.game.id);
   }
+
+  await resetPlayerPhaseFlags(state.game.id);
 
   const playersToReward = getBottomHalfPlayers(state.players);
 
@@ -626,7 +597,6 @@ async function revealRound(state: GameState): Promise<GameState> {
       status: "reveal",
       phase_end_time: null,
       active_modifiers: [],
-      card_phase_done_player_ids: [],
     })
     .eq("id", state.game.id)
     .eq("status", "guessing")
@@ -639,6 +609,8 @@ async function revealRound(state: GameState): Promise<GameState> {
   if (!claimedGame) {
     return pollGameState(state.game.id);
   }
+
+  await resetPlayerPhaseFlags(state.game.id);
 
   await Promise.all(
     state.guesses.map(async (guess) => {
@@ -694,8 +666,6 @@ async function startPromptingRound(
       prompt_text: null,
       prompt_word_count: null,
       image_url: null,
-      ready_player_ids: [],
-      card_phase_done_player_ids: [],
       phase_end_time: null,
       turn_order: turnOrder,
     })
@@ -713,6 +683,8 @@ async function startPromptingRound(
   if (!claimedGame) {
     return pollGameState(state.game.id);
   }
+
+  await resetPlayerPhaseFlags(state.game.id);
 
   return pollGameState(state.game.id);
 }
@@ -782,6 +754,28 @@ function allGuessersSubmitted(state: GameState): boolean {
   );
 }
 
+function allPlayersReady(state: GameState): boolean {
+  return (
+    state.players.length > 0 && state.players.every((player) => player.is_ready)
+  );
+}
+
+function allPlayersCardPhaseDone(state: GameState): boolean {
+  return (
+    state.players.length > 0 &&
+    state.players.every((player) => player.is_card_phase_done)
+  );
+}
+
+async function resetPlayerPhaseFlags(gameId: string): Promise<void> {
+  const { error } = await supabase
+    .from("players")
+    .update({ is_ready: false, is_card_phase_done: false })
+    .eq("game_id", gameId);
+
+  throwIfError(error);
+}
+
 function getBottomHalfPlayers(players: PlayerRecord[]): PlayerRecord[] {
   const sortedPlayers = [...players].sort((first, second) => {
     if (first.score === second.score) {
@@ -804,10 +798,8 @@ function getRandomCardId(): string {
 function normalizeGame(game: GameRow): GameRecord {
   return {
     ...game,
-    ready_player_ids: asStringArray(game.ready_player_ids),
     turn_order: asStringArray(game.turn_order),
     active_modifiers: asActiveModifiers(game.active_modifiers),
-    card_phase_done_player_ids: asStringArray(game.card_phase_done_player_ids),
   };
 }
 
@@ -816,6 +808,8 @@ function normalizePlayer(player: PlayerRow): PlayerRecord {
     ...player,
     is_host: Boolean(player.is_host),
     inventory_cards: asStringArray(player.inventory_cards),
+    is_ready: Boolean(player.is_ready),
+    is_card_phase_done: Boolean(player.is_card_phase_done),
   };
 }
 

@@ -12,6 +12,6 @@
 9. Round Cycles: When all players ready up in Intermission, `current_round` increments, prompter cycles, and active modifiers are cleared.
 
 ## 2. Database Schema (Supabase)
-* **games:** id, created_at, status (lobby | prompting | generating | guessing | reveal | intermission | game_over), max_players, guessing_time_limit, current_prompter_id, current_round, phase_end_time, prompt_text, prompt_word_count, image_url, ready_player_ids, turn_order, active_modifiers (jsonb), card_phase_done_player_ids (jsonb).
-* **players:** id, created_at, game_id, player_id, display_name, score, joined_at, inventory_cards (jsonb).
+* **games:** id, created_at, status (lobby | prompting | generating | guessing | reveal | intermission | game_over), max_players, guessing_time_limit, current_prompter_id, current_round, phase_end_time, prompt_text, prompt_word_count, image_url, turn_order, active_modifiers (jsonb).
+* **players:** id, created_at, game_id, player_id, display_name, score, joined_at, inventory_cards (jsonb), is_ready, is_card_phase_done.
 * **guesses:** id, created_at, game_id, round_number, player_id, raw_guess, score, matched_words_json (jsonb).

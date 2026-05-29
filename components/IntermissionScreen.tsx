@@ -5,10 +5,9 @@ import { useMemo, useState } from "react";
 import FeatureCard from "@/components/FeatureCard";
 import PlayerHUD from "@/components/PlayerHUD";
 import { cardDefinitions } from "@/features/cards/cardDefinitions";
-import type { GameRecord, PlayerRecord } from "@/services/gameService";
+import type { PlayerRecord } from "@/services/gameService";
 
 type IntermissionScreenProps = {
-  game: GameRecord;
   players: PlayerRecord[];
   localPlayerId: string;
   nextPrompterName: string;
@@ -18,7 +17,6 @@ type IntermissionScreenProps = {
 };
 
 export default function IntermissionScreen({
-  game,
   players,
   localPlayerId,
   nextPrompterName,
@@ -37,9 +35,9 @@ export default function IntermissionScreen({
   const [selectedTargets, setSelectedTargets] = useState<Record<string, string>>(
     {},
   );
-  const isLocalReady = game.card_phase_done_player_ids.includes(localPlayerId);
-  const readyCount = game.card_phase_done_player_ids.filter((playerId) =>
-    players.some((player) => player.player_id === playerId),
+  const isLocalReady = Boolean(localPlayer?.is_card_phase_done);
+  const readyCount = players.filter(
+    (player) => player.is_card_phase_done,
   ).length;
 
   function getSelectedTarget(cardKey: string): string {

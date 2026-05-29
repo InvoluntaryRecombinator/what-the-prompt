@@ -410,7 +410,6 @@ export default function Game() {
     if (gameState.game.status === "intermission") {
       return (
         <IntermissionScreen
-          game={gameState.game}
           isBusy={isBusy}
           localPlayerId={localPlayerId}
           nextPrompterName={nextPrompterName}

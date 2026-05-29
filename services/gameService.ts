@@ -265,7 +265,9 @@ export async function submitPrompt({
       card_phase_done_player_ids: [],
       phase_end_time: null,
     })
-    .eq("id", state.game.id);
+    .eq("id", state.game.id)
+    .eq("status", "prompting")
+    .eq("current_round", state.game.current_round);
 
   throwIfError(generatingError);
 
@@ -298,14 +300,18 @@ export async function submitPrompt({
         image_url: data.imageUrl,
         phase_end_time: phaseEndTime,
       })
-      .eq("id", state.game.id);
+      .eq("id", state.game.id)
+      .eq("status", "generating")
+      .eq("current_round", state.game.current_round);
 
     throwIfError(guessingError);
   } catch (error) {
     await supabase
       .from("games")
       .update({ status: "prompting", phase_end_time: null })
-      .eq("id", state.game.id);
+      .eq("id", state.game.id)
+      .eq("status", "generating")
+      .eq("current_round", state.game.current_round);
     throw error;
   }
 
@@ -389,13 +395,21 @@ export async function toggleReady({
   ).length;
 
   if (readyCount >= state.players.length && state.players.length > 0) {
-    return enterIntermission(state);
+    return enterIntermission({
+      ...state,
+      game: {
+        ...state.game,
+        ready_player_ids: readyPlayerIds,
+      },
+    });
   }
 
   const { error } = await supabase
     .from("games")
     .update({ ready_player_ids: readyPlayerIds })
-    .eq("id", state.game.id);
+    .eq("id", state.game.id)
+    .eq("status", "reveal")
+    .eq("current_round", state.game.current_round);
 
   throwIfError(error);
 
@@ -424,13 +438,24 @@ export async function toggleCardReady({
   ).length;
 
   if (doneCount >= state.players.length && state.players.length > 0) {
-    return startPromptingRound(state, state.game.current_round + 1);
+    return startPromptingRound(
+      {
+        ...state,
+        game: {
+          ...state.game,
+          card_phase_done_player_ids: donePlayerIds,
+        },
+      },
+      state.game.current_round + 1,
+    );
   }
 
   const { error } = await supabase
     .from("games")
     .update({ card_phase_done_player_ids: donePlayerIds })
-    .eq("id", state.game.id);
+    .eq("id", state.game.id)
+    .eq("status", "intermission")
+    .eq("current_round", state.game.current_round);
 
   throwIfError(error);
 
@@ -500,7 +525,9 @@ export async function playCard({
   const { error: gameError } = await supabase
     .from("games")
     .update({ active_modifiers: nextModifiers })
-    .eq("id", state.game.id);
+    .eq("id", state.game.id)
+    .eq("status", "intermission")
+    .eq("current_round", state.game.current_round);
 
   throwIfError(gameError);
 
@@ -556,6 +583,7 @@ async function enterIntermission(state: GameState): Promise<GameState> {
     })
     .eq("id", state.game.id)
     .eq("status", "reveal")
+    .eq("current_round", state.game.current_round)
     .select("*")
     .maybeSingle();
 
@@ -602,6 +630,7 @@ async function revealRound(state: GameState): Promise<GameState> {
     })
     .eq("id", state.game.id)
     .eq("status", "guessing")
+    .eq("current_round", state.game.current_round)
     .select("*")
     .maybeSingle();
 
@@ -648,10 +677,15 @@ async function startPromptingRound(
   state: GameState,
   roundNumber: number,
 ): Promise<GameState> {
+  if (state.game.status !== "lobby" && state.game.status !== "intermission") {
+    return pollGameState(state.game.id);
+  }
+
   const turnOrder = getTurnOrder(state);
   const currentPrompterId = getPrompterIdForRound(state, roundNumber);
+  const expectedPriorStatus = state.game.status;
 
-  const { error } = await supabase
+  const { data: claimedGame, error } = await supabase
     .from("games")
     .update({
       status: "prompting",
@@ -665,9 +699,20 @@ async function startPromptingRound(
       phase_end_time: null,
       turn_order: turnOrder,
     })
-    .eq("id", state.game.id);
+    .eq("id", state.game.id)
+    .eq(
+      "status",
+      expectedPriorStatus === "intermission" ? "intermission" : "lobby",
+    )
+    .eq("current_round", state.game.current_round)
+    .select("*")
+    .maybeSingle();
 
   throwIfError(error);
+
+  if (!claimedGame) {
+    return pollGameState(state.game.id);
+  }
 
   return pollGameState(state.game.id);
 }

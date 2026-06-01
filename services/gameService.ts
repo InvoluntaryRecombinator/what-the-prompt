@@ -181,6 +181,27 @@ export async function joinGame({
 }
 
 export async function pollGameState(gameId: string): Promise<GameState> {
+  const state = await fetchGameState(gameId);
+
+  if (shouldAutoReveal(state)) {
+    return revealRound(state);
+  }
+
+  if (state.game.status === "reveal" && allPlayersReady(state)) {
+    return enterIntermission(state);
+  }
+
+  if (
+    state.game.status === "intermission" &&
+    allPlayersCardPhaseDone(state)
+  ) {
+    return startPromptingRound(state, state.game.current_round + 1);
+  }
+
+  return state;
+}
+
+async function fetchGameState(gameId: string): Promise<GameState> {
   const normalizedGameId = gameId.trim();
 
   const { data: gameData, error: gameError } = await supabase
@@ -210,19 +231,13 @@ export async function pollGameState(gameId: string): Promise<GameState> {
 
   throwIfError(guessError);
 
-  const state = {
+  return {
     game,
     players: (playerData ?? []).map((player) =>
       normalizePlayer(player as PlayerRow),
     ),
     guesses: (guessData ?? []).map((guess) => normalizeGuess(guess as GuessRow)),
   };
-
-  if (shouldAutoReveal(state)) {
-    return revealRound(state);
-  }
-
-  return state;
 }
 
 export async function submitPrompt({
@@ -377,27 +392,15 @@ export async function toggleReady({
   gameId: string;
   playerId: string;
 }): Promise<GameState> {
-  const state = await pollGameState(gameId);
-
-  if (state.game.status !== "reveal") {
-    return state;
-  }
-
   const { error } = await supabase
     .from("players")
     .update({ is_ready: true })
-    .eq("game_id", state.game.id)
+    .eq("game_id", gameId.trim())
     .eq("player_id", playerId);
 
   throwIfError(error);
 
-  const nextState = await pollGameState(state.game.id);
-
-  if (nextState.game.status === "reveal" && allPlayersReady(nextState)) {
-    return enterIntermission(nextState);
-  }
-
-  return nextState;
+  return fetchGameState(gameId);
 }
 
 export async function toggleCardReady({
@@ -407,30 +410,15 @@ export async function toggleCardReady({
   gameId: string;
   playerId: string;
 }): Promise<GameState> {
-  const state = await pollGameState(gameId);
-
-  if (state.game.status !== "intermission") {
-    return state;
-  }
-
   const { error } = await supabase
     .from("players")
     .update({ is_card_phase_done: true })
-    .eq("game_id", state.game.id)
+    .eq("game_id", gameId.trim())
     .eq("player_id", playerId);
 
   throwIfError(error);
 
-  const nextState = await pollGameState(state.game.id);
-
-  if (
-    nextState.game.status === "intermission" &&
-    allPlayersCardPhaseDone(nextState)
-  ) {
-    return startPromptingRound(nextState, nextState.game.current_round + 1);
-  }
-
-  return nextState;
+  return fetchGameState(gameId);
 }
 
 export async function playCard({

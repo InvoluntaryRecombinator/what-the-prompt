@@ -2,6 +2,10 @@
 
 *Note: This is currently a working prototype. The core multiplayer loop is functional, but advanced features, refined UI, and proper styling will be added in later updates.*
 
+## Where to find it
+
+https://what-the-prompt-nine.vercel.app/
+
 ## What It Is
 
 **What The Prompt** is a real-time multiplayer party game. One player writes a secret prompt, an AI generates an image from it, and the rest of the lobby scrambles to guess the exact words used to create that image.
